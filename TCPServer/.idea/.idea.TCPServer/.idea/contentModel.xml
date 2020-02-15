@@ -8,6 +8,8 @@
       <e p="TCPServer" t="IncludeRecursive">
         <e p="bin" t="ExcludeRecursive" />
         <e p="Client.cs" t="Include" />
+        <e p="Constants.cs" t="Include" />
+        <e p="GameLogic.cs" t="Include" />
         <e p="obj" t="ExcludeRecursive">
           <e p="Debug" t="Include">
             <e p="netcoreapp3.0" t="Include">
@@ -15,9 +17,13 @@
             </e>
           </e>
         </e>
+        <e p="Packets.cs" t="Include" />
         <e p="Program.cs" t="Include" />
         <e p="Server.cs" t="Include" />
+        <e p="ServerHandle.cs" t="Include" />
+        <e p="ServerSend.cs" t="Include" />
         <e p="TCPServer.csproj" t="IncludeRecursive" />
+        <e p="ThreadManager.cs" t="Include" />
       </e>
       <e p="TCPServer.sln" t="IncludeFlat" />
     </e>

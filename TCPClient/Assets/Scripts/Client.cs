@@ -1,6 +1,9 @@
 ﻿using System;
+using System.Collections.Generic;
 using UnityEngine;
 using System.Net.Sockets;
+using System.Text.RegularExpressions;
+using TCPServer;
 
 public class Client : MonoBehaviour
 {
@@ -12,6 +15,9 @@ public class Client : MonoBehaviour
     public int myId = 0;
     public TCP tcp;
 
+    private delegate void PacketHandler(Packet packet);
+
+    private static Dictionary<int, PacketHandler> _packetHandlers;
 
     private void Awake()
     {
@@ -34,6 +40,7 @@ public class Client : MonoBehaviour
 
     public void ConnectToServer()
     {
+        InitializeClientData();
         tcp.Connect();
     }
 
@@ -41,6 +48,7 @@ public class Client : MonoBehaviour
     {
         public TcpClient socket;
 
+        private Packet receiveData;
         private NetworkStream stream;
         private byte[] receiveBuffer;
 
@@ -65,13 +73,36 @@ public class Client : MonoBehaviour
         private void ConnectCallback(IAsyncResult _result)
         {
             socket.EndConnect(_result); //ends the conection
-            if (socket.Connected) //if it is connected the return
+            if (!socket.Connected) //if it is connected the return
             {
                 return;
             }
 
             stream = socket.GetStream(); //Sets the stream
+
+            receiveData = new Packet();
+
             stream.BeginRead(receiveBuffer, 0, DataBufferSize, ReceiveCallback, null); //reade the stream
+        }
+
+        /// <summary>
+        /// Sends data to the server
+        /// </summary>
+        /// <param name="packet"></param>
+        /// <exception cref="NotImplementedException"></exception>
+        public void SendData(Packet packet)
+        {
+            try
+            {
+                if (socket != null)
+                {
+                    stream.BeginWrite(packet.ToArray(), 0, packet.Length(), null, null);
+                }
+            }
+            catch (Exception e)
+            {
+                Debug.Log(e);
+            }
         }
 
         /// <summary>
@@ -93,14 +124,77 @@ public class Client : MonoBehaviour
                 byte[] data = new byte[byteLength];
                 Array.Copy(receiveBuffer, data, byteLength); //copy in a new array
 
-                //TODO : handle the data
+                receiveData.Reset(HandleData(data)); // in case a packet is split between two deliveries (TCP protocol)
                 stream.BeginRead(receiveBuffer, 0, DataBufferSize, ReceiveCallback, null); //Continue reading data from the stream
             }
-            catch (Exception _ex)
+            catch
             {
-                Console.WriteLine(_ex);
-                throw;
+                //Todo disconnect
             }
         }
+
+        /// <summary>
+        /// Handled all the data
+        /// mostly to do whit tcp stuff
+        /// </summary>
+        /// <param name="data"></param>
+        /// <returns></returns>
+        private bool HandleData(byte[] data)
+        {
+            int packetLength = 0;
+
+            receiveData.SetBytes(data);
+
+            if (receiveData.UnreadLength() >= 4)
+            {
+                packetLength = receiveData.ReadInt();
+                if (packetLength <= 0)
+                {
+                    return true;
+                }
+            }
+
+            while (packetLength > 0 && packetLength <= receiveData.UnreadLength())
+            {
+                byte[] packetBytes = receiveData.ReadBytes(packetLength);
+                ThreadManager.ExecuteOnMainThread(() =>
+                {
+                    using (Packet packet = new Packet(packetBytes))
+                    {
+                        int packetId = packet.ReadInt();
+                        _packetHandlers[packetId](packet);
+                    }
+                });
+
+                packetLength = 0;
+                if (receiveData.UnreadLength() >= 4)
+                {
+                    packetLength = receiveData.ReadInt();
+                    if (packetLength <= 0)
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            if (packetLength <= 1)
+            {
+                return true;
+            }
+
+            return false;
+        }
+    }    
+
+    /// <summary>
+    /// Initialises the packets 
+    /// </summary>
+    private void InitializeClientData()
+    {
+        _packetHandlers = new Dictionary<int, PacketHandler>()
+        {
+            {(int) ServerPackets.welcome, ClientHandle.Welcome}
+        };
+        Debug.Log("initialized packets");
     }
 }

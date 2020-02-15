@@ -24,6 +24,7 @@ namespace TCPServer
             public TcpClient socket;
             private readonly int ID;
             private NetworkStream stream;
+            private Packet receivedData;
             private byte[] receiveBuffer;
 
             /// <summary>
@@ -47,9 +48,31 @@ namespace TCPServer
 
                 stream = socket.GetStream();
 
+                receivedData = new Packet();
                 receiveBuffer = new byte[dataBufferSize]; //initis the bufer with the correct size
 
                 stream.BeginRead(receiveBuffer, 0, dataBufferSize, ReceiveCallback, null);
+
+                ServerSend.Welcome(ID, "Welcome to the server !");
+            }
+
+            /// <summary>
+            /// Send data to a client
+            /// </summary>
+            /// <param name="packet"></param>
+            public void SendData(Packet packet)
+            {
+                try
+                {
+                    if (socket != null)
+                    {
+                        stream.BeginWrite(packet.ToArray(), 0, packet.Length(), null, null);
+                    }
+                }
+                catch (Exception e)
+                {
+                    Console.WriteLine(e);
+                }
             }
 
             /// <summary>
@@ -71,14 +94,65 @@ namespace TCPServer
                     byte[] data = new byte[byteLength];
                     Array.Copy(receiveBuffer, data, byteLength); //copy in a new array
 
-                    //TODO : hadle the data
+                    receivedData.Reset(HandleData(data));
                     stream.BeginRead(receiveBuffer, 0, dataBufferSize, ReceiveCallback, null); //Continue reading data from the stream
                 }
-                catch (Exception _ex)
+                catch (Exception e)
                 {
-                    Console.WriteLine(_ex);
-                    throw;
+                    Console.WriteLine(e);
                 }
+            }
+
+            /// <summary>
+            /// Handled all the data
+            /// mostly to do whit tcp stuff
+            /// </summary>
+            /// <param name="data"></param>
+            /// <returns></returns>
+            private bool HandleData(byte[] data)
+            {
+                int packetLength = 0;
+
+                receivedData.SetBytes(data);
+
+                if (receivedData.UnreadLength() >= 4)
+                {
+                    packetLength = receivedData.ReadInt();
+                    if (packetLength <= 0)
+                    {
+                        return true;
+                    }
+                }
+
+                while (packetLength > 0 && packetLength <= receivedData.UnreadLength())
+                {
+                    byte[] packetBytes = receivedData.ReadBytes(packetLength);
+                    ThreadManager.ExecuteOnMainThread(() =>
+                    {
+                        using (Packet packet = new Packet(packetBytes))
+                        {
+                            int packetId = packet.ReadInt();
+                            Server.PacketHandlers[packetId](ID, packet);
+                        }
+                    });
+
+                    packetLength = 0;
+                    if (receivedData.UnreadLength() >= 4)
+                    {
+                        packetLength = receivedData.ReadInt();
+                        if (packetLength <= 0)
+                        {
+                            return true;
+                        }
+                    }
+                }
+
+                if (packetLength <= 1)
+                {
+                    return true;
+                }
+
+                return false;
             }
         }
     }
